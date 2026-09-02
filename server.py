@@ -5,6 +5,9 @@ clients = {}# istemcilerin soketlerini tutmak için bir liste
 addresses = {} # istemcilerin adreslerini tutmak için bir liste
 
 # client taraıfnda hangi server ile yapılabir tarzı imput oluşturabililir gelişme amaçlı 
+# kullanıc girişi veri tabanı send ile gönderilecek server alacak kullanıcı listesi oluşturulacak ve kullanıcılar listesi ile karşılaştırılacak
+#gelen mesaj şu ise aç kullanıcadı varmı konrol et vs vs 
+
 HOST = '127.0.0.1' #localhost, ıp adresi
 PORT = 19751 # port numarası 0–65535 arası olabilir
 BUFFeR_SIZE = 1024 # buffer boyutu
@@ -40,13 +43,14 @@ def handle_client(client_socket):
     )
 
     client_socket.send(bytes(welcome_message, "utf-8")) # istemciye hoşgeldin mesajı gönder
-    broadcast(bytes("%s has joined the chat." % name, "utf-8"), "") # istemcinin sohbete katıldığını yayınla
     clients[client_socket] = name # istemcinin ismini kaydet
+    broadcast("%s has joined the chat." % name) # istemcinin sohbete katıldığını yayınla
+   
 
     while True:
 
         message = client_socket.recv(BUFFeR_SIZE).decode("utf-8") # istemciden mesaj al
-        if message != bytes("{quit}", "utf-8"):
+        if message != "{quit}":
             broadcast(message, name + ": ") # mesajı yayınla
 
         else:
@@ -57,9 +61,9 @@ def handle_client(client_socket):
             if client_socket in addresses:
                 del addresses[client_socket] # istemcinin adresini listeden sil
 
-            broadcast(
-                bytes("%s has left the chat." % name, "utf-8")
-            ) # istemcinin ayrıldığını yayınla
+            
+            broadcast("%s has left the chat." % name)
+            # istemcinin ayrıldığını yayınla
             break
       
 

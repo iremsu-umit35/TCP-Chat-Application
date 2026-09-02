@@ -2,16 +2,31 @@ from socket  import socket, AF_INET, SOCK_STREAM
 from threading import Thread # birden fazla istemciyi aynı anda dinleyebilmek için
 import tkinter # GUI kütüphanesi 
 
-def send():
-    pass
-
-
 def revieve_message():
-    pass
+    #daima gelen mesajları dinler ve GUI'ye ekler
+    while True:
+        try:
+            msg = client_socket.recv(BUFFERSIZE).decode("utf-8") # server'dan gelen mesajı al
+            message_list.insert(tkinter.END, msg) # mesajı GUI'ye ekle
+        except OSError:  # muhtemelen pencere kapatıldı
+            break
 
 
-def on_closing(): #çıkış yaparken yapılacak işlemler
-    pass
+
+def send(event=None):  # enter tuşuna basıldığında mesaj gönder
+    msg = my_message.get() # mesaj değişkenini al
+    my_message.set("") # mesaj değişkenini temizle
+    client_socket.send(bytes(msg, "utf-8")) # mesajı server'a gönder    
+
+    if msg == "{quit}": # eğer mesaj {quit} ise
+        client_socket.close() # soketi kapat
+        app.quit() # GUI'yi kapat
+
+
+
+def on_closing(event=None): #çıkış yaparken yapılacak işlemler
+    my_message.set("{quit}") # mesaj değişkenine {quit} ata
+    send() # mesajı gönder
 
 
 #application GUI
@@ -45,4 +60,7 @@ client_socket.connect(ADDR) # soketi adrese bağlama
 
 coming_message_thread = Thread(target=revieve_message) # gelen mesajları dinlemeye başla
 coming_message_thread.start() # thread'i başlat
-tkinter.mainloop() # GUI'yi başlat
+
+app.protocol("WM_DELETE_WINDOW", on_closing) # pencere kapatıldığında on_closing fonksiyonunu çağır
+
+app.mainloop() # GUI'yi başlat
