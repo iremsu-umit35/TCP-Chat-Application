@@ -1,51 +1,50 @@
-from socket  import socket, AF_INET, SOCK_STREAM
 from threading import Thread # birden fazla istemciyi aynı anda dinleyebilmek için
 import tkinter # GUI kütüphanesi 
+from network import NetworkClient # network.py dosyasındaki NetworkClient sınıfını import et
 
-client_socket = None 
-BUFFERSIZE = 1024 # buffer boyutu
+network_client = NetworkClient() # NetworkClient sınıfından bir nesne oluştur
 
-def revieve_message():
+def listen_for_messages():
     #daima gelen mesajları dinler ve GUI'ye ekler
     while True:
         try:
-            msg = client_socket.recv(BUFFERSIZE).decode("utf-8") # server'dan gelen mesajı al
+            msg = network_client.receive_message() # server'dan gelen mesajı al 
             message_list.insert(tkinter.END, msg) # mesajı GUI'ye ekle
         except OSError:  # muhtemelen pencere kapatıldı
             break
 
 
-
 def send(event=None):  # enter tuşuna basıldığında mesaj gönder
     msg = my_message.get() # mesaj değişkenini al
     my_message.set("") # mesaj değişkenini temizle
-    client_socket.send(bytes(msg, "utf-8")) # mesajı server'a gönder    
+    network_client.send_message(msg) # mesajı server'a gönder
 
     if msg == "{quit}": # eğer mesaj {quit} ise
-        client_socket.close() # soketi kapat
+        network_client.close_connection() # soketi kapat
         app.quit() # GUI'yi kapat
 
 
-
-def on_closing(event=None): #çıkış yaparken yapılacak işlemler
-    my_message.set("{quit}") # mesaj değişkenine {quit} ata
-    send() # mesajı gönder
+def on_closing(event=None):
+    if network_client.client_socket:
+        my_message.set("{quit}")
+        send()
+    else:
+        app.destroy()
 
 # server'a bağlanmak için gerekli işlemleri yapar kullanıcıdan host ve port bilgilerini alır ve soket oluşturur
 def connect_to_server(): 
-    global client_socket
 
     username = username_entry.get()
     host = host_entry.get()  # host adresini al
     port = int(port_entry.get()) # port numarasını al
 
-    client_socket = socket(AF_INET, SOCK_STREAM) # soket oluşturma
-    client_socket.connect((host, port)) # server'a bağlanma
-    client_socket.send(bytes(username, "utf-8"))
+    network_client.connect(host, port) # server'a bağlan
+
+    network_client.send_message(username)
     connection_frame.pack_forget() #giriş çerçevesini gizle
     chat_frame.pack() # sohbet çerçevesini göster
     coming_message_thread = Thread( # gelen mesajları dinlemek için thread oluştur
-        target=revieve_message,
+        target=listen_for_messages,
         daemon=True
     )
     coming_message_thread.start() # thread'i başlat
@@ -104,7 +103,7 @@ message_frame = tkinter.Frame(chat_frame)
 
 
 my_message = tkinter.StringVar() # mesaj değişkeni oluştur
-my_message.set("chatinizi giriniz.") # mesaj değişkenine başlangıç mesajı ata
+my_message.set("")
 scrollbar = tkinter.Scrollbar(message_frame) # mesaj çerçevesine scrollbar ekle
 message_list = tkinter.Listbox(message_frame, height=15, width=50, yscrollcommand=scrollbar.set) # mesaj listesi oluştur
 scrollbar.pack(side=tkinter.RIGHT, fill=tkinter.BOTH) # scrollbar'ı sağ tarafa ekle
@@ -116,12 +115,6 @@ entry_field.bind("<Return>", send) # enter tuşuna basıldığında mesaj gönde
 entry_field.pack() # mesaj giriş alanını GUI'ye ekle
 send_button = tkinter.Button(chat_frame, text="Gönder", command=send) # mesaj gönder butonu oluştur
 send_button.pack() # mesaj gönder butonunu GUI'ye ekle
-
-
-
-
-
-
 
 app.protocol("WM_DELETE_WINDOW", on_closing) # pencere kapatıldığında on_closing fonksiyonunu çağır
 
