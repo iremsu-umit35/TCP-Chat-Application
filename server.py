@@ -8,7 +8,7 @@ addresses = {} # istemcilerin adreslerini tutmak için bir liste
 # kullanıc girişi veri tabanı send ile gönderilecek server alacak kullanıcı listesi oluşturulacak ve kullanıcılar listesi ile karşılaştırılacak
 #gelen mesaj şu ise aç kullanıcadı varmı konrol et vs vs 
 HEADER_SIZE = 10
-HOST = '127.0.0.1' #localhost, ıp adresi
+HOST = '192.168.1.159' #localhost, ıp adresi
 PORT = 19751 # port numarası 0–65535 arası olabilir
 
 
