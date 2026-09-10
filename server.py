@@ -1,5 +1,6 @@
 from socket import socket, AF_INET, SOCK_STREAM
 from threading import Thread # birden fazla istemciyi aynı anda dinleyebilmek için
+from protocol import parse_message
 
 clients = {}# istemcilerin soketlerini tutmak için bir liste
 addresses = {} # istemcilerin adreslerini tutmak için bir liste
@@ -36,13 +37,23 @@ def handle_client(client_socket):
     # Client bağlantısı ile ilgili işlemleri yapar
 
     # Client'tan kullanıcı adını al
-    name = receive_from_client(client_socket)
+    raw_message = receive_from_client(client_socket)
+    # 
+    message_type, content = parse_message(message)
 
-    # Bağlantı kullanıcı adı alınmadan kapandıysa çık
-    if name is None:
+    if raw_message is None:
         client_socket.close()
         return
-    
+
+    # Bağlantı kullanıcı adı alınmadan kapandıysa çık
+    message_type, content = parse_message(raw_message)
+
+    if message_type != "LOGIN":
+        client_socket.close()
+        return
+
+    name = content
+        
     welcome_message = (
         "Welcome %s! "
         "If you ever want to quit, type {quit} to exit."
@@ -90,39 +101,21 @@ def handle_client(client_socket):
             break
         # Kullanıcı çıkış komutu göndermediyse
         # mesajı diğer client'lara yayınla
-        if message != "{quit}":
-            broadcast(
-                message,
-                name + ": "
-            )
+        if message_type == "MESSAGE":
+             broadcast(content, name + ": ")
 
-        # Kullanıcı {quit} gönderdiyse
-        else:
-
-            # Client'a çıkış mesajını framing protokolüyle gönder
-            send_to_client(
-                client_socket,
-                "{quit}"
-            )
-
-            # Socket bağlantısını kapat
+        elif message_type == "QUIT":
+            send_to_client(client_socket, "{quit}")
             client_socket.close()
 
-            # Client'ı kullanıcı listesinden sil
             if client_socket in clients:
                 del clients[client_socket]
 
-            # Client'ın adres bilgisini sil
             if client_socket in addresses:
                 del addresses[client_socket]
 
-            # Diğer kullanıcılara kişinin ayrıldığını bildir
-            broadcast(
-                "%s has left the chat." % name
-            )
-
+            broadcast("%s has left the chat." % name)
             break
-
 
 def broadcast(message, person=""):
     # Mesajı bütün istemcilere gönder

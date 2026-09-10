@@ -2,7 +2,7 @@ from threading import Thread
 
 from network import NetworkClient
 from ui import ChatUI
-
+from protocol import create_message
 
 # TCP işlemlerini yapacak nesne
 network_client = NetworkClient()
@@ -83,7 +83,7 @@ def connect_to_server():
 
     # Kullanıcı adını server'a gönder
     network_client.send_message(
-        username
+        create_message("LOGIN", username)
     )
 
     # Bağlantı ekranını gizleyip chat ekranını göster
