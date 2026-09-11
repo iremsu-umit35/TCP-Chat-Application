@@ -1,5 +1,8 @@
 SEPARATOR = "|"
-
+LOGIN = "LOGIN"
+MESSAGE = "MESSAGE"
+QUIT = "QUIT"
+PRIVATE_MESSAGE = "PRIVATE_MESSAGE"
 
 def create_message(message_type, content=""):
     return f"{message_type}{SEPARATOR}{content}"

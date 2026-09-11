@@ -3,7 +3,7 @@ import tkinter
 
 class ChatUI:
 
-    def __init__(self, connect_callback, send_callback, close_callback):
+    def __init__(self, connect_callback, send_callback, private_send_callback, close_callback):
 
         # Ana pencere
         self.app = tkinter.Tk()
@@ -101,6 +101,13 @@ class ChatUI:
         self.message_frame.pack()
 
         # Mesaj yazma alanı
+
+        self.private_user_entry = tkinter.Entry(
+            self.chat_frame
+        )
+        self.private_user_entry.insert(0, "Hedef kullanıcı")
+        self.private_user_entry.pack()
+
         self.entry_field = tkinter.Entry(
             self.chat_frame,
             textvariable=self.my_message
@@ -120,9 +127,14 @@ class ChatUI:
             text="Gönder",
             command=send_callback
         )
-
         self.send_button.pack()
-
+        # Özel mesaj gönder butonu
+        self.private_send_button = tkinter.Button(
+            self.chat_frame,
+            text="Özel Gönder",
+            command=private_send_callback
+        )
+        self.private_send_button.pack()
 
     def show_chat(self):
         """
@@ -150,7 +162,10 @@ class ChatUI:
         Mesaj kutusundaki mesajı döndürür.
         """
         return self.my_message.get()
-
+    
+    # özel mesaj için hedef kullanıcıyı döndürür
+    def get_private_user(self):
+        return self.private_user_entry.get()
 
     def clear_message(self):
         """
