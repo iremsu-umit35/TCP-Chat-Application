@@ -1,6 +1,7 @@
 from socket import socket, AF_INET, SOCK_STREAM
 from threading import Thread # birden fazla istemciyi aynı anda dinleyebilmek için
-from protocol import parse_message
+from protocol import (SEPARATOR, parse_message,
+                      PRIVATE_MESSAGE,)
 
 clients = {}# istemcilerin soketlerini tutmak için bir liste
 addresses = {} # istemcilerin adreslerini tutmak için bir liste
@@ -38,8 +39,8 @@ def handle_client(client_socket):
 
     # Client'tan kullanıcı adını al
     raw_message = receive_from_client(client_socket)
-    # 
-    message_type, content = parse_message(message)
+    
+    # message_type, content = parse_message(message)
 
     if raw_message is None:
         client_socket.close()
@@ -80,7 +81,7 @@ def handle_client(client_socket):
         message = receive_from_client(client_socket)
 
         # Bağlantı aniden kesildiyse döngüden çık
-# Bağlantı aniden kesildiyse
+        # Bağlantı aniden kesildiyse
         if message is None:
 
             # Client'ı kullanıcı listesinden sil
@@ -101,8 +102,40 @@ def handle_client(client_socket):
             break
         # Kullanıcı çıkış komutu göndermediyse
         # mesajı diğer client'lara yayınla
+
+        message_type, content = parse_message(message)
         if message_type == "MESSAGE":
              broadcast(content, name + ": ")
+
+        elif message_type == "PRIVATE_MESSAGE":
+            parts = content.split(SEPARATOR, 1)
+            if len(parts) == 2:
+                target_user = parts[0]
+                private_content = parts[1]
+
+                user_found = False
+
+                # Hedef kullanıcıyı bul
+                for client, user_name in clients.items():
+                    if user_name == target_user:
+                        send_to_client(
+                            client,
+                            f"[özel] {name}: {private_content}"
+                        )
+
+                        if client != client_socket:
+                            send_to_client(
+                                client_socket,
+                                f"[özel -> {target_user}] {private_content}"
+                            )
+                        user_found = True
+                        break
+
+                if not user_found:
+                    send_to_client(
+                        client_socket,
+                        f"User '{target_user}' not found."
+                    )
 
         elif message_type == "QUIT":
             send_to_client(client_socket, "{quit}")
@@ -211,6 +244,7 @@ def send_to_client(client_socket, message):
     client_socket.sendall(
         header_bytes + message_bytes
     )
+
 
 
 
