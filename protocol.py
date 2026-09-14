@@ -3,6 +3,9 @@ LOGIN = "LOGIN"
 MESSAGE = "MESSAGE"
 QUIT = "QUIT"
 PRIVATE_MESSAGE = "PRIVATE_MESSAGE"
+USER_LIST = "USER_LIST"
+PING = "PING"
+PONG = "PONG"
 
 def create_message(message_type, content=""):
     return f"{message_type}{SEPARATOR}{content}"

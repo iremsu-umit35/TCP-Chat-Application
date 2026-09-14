@@ -1,4 +1,5 @@
 import tkinter
+from queue import Queue, Empty
 
 
 class ChatUI:
@@ -6,7 +7,9 @@ class ChatUI:
     def __init__(self, connect_callback, send_callback, private_send_callback, close_callback):
 
         # Ana pencere
+        self.updates = Queue()
         self.app = tkinter.Tk()
+        self.app.after(50, self.process_updates)
         self.app.title("Chat Application")
 
         # Pencere kapatılırken Client.py içindeki fonksiyonu çalıştır
@@ -100,6 +103,10 @@ class ChatUI:
 
         self.message_frame.pack()
 
+        tkinter.Label(self.chat_frame, text="Online kullanıcılar").pack()
+        self.user_list = tkinter.Listbox(self.chat_frame, height=6, width=50)
+        self.user_list.pack()
+
         # Mesaj yazma alanı
 
         self.private_user_entry = tkinter.Entry(
@@ -186,10 +193,25 @@ class ChatUI:
         """
         Server'dan gelen mesajı chat ekranına ekler.
         """
-        self.message_list.insert(
-            tkinter.END,
-            message
-        )
+        self.updates.put(("message", message))
+
+    def update_users(self, users):
+        self.updates.put(("users", list(users)))
+
+    def process_updates(self):
+        # Widget updates run on the Tkinter main thread.
+        try:
+            while True:
+                kind, value = self.updates.get_nowait()
+                if kind == "users":
+                    self.user_list.delete(0, tkinter.END)
+                    for username in value:
+                        self.user_list.insert(tkinter.END, username)
+                else:
+                    self.message_list.insert(tkinter.END, value)
+        except Empty:
+            pass
+        self.app.after(50, self.process_updates)
 
 
     def close(self):

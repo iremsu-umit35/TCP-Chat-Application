@@ -1,9 +1,14 @@
+import json
 from threading import Thread
 
 from network import NetworkClient
 from ui import ChatUI
 from protocol import (
     SEPARATOR,
+    USER_LIST,
+    PING,
+    PONG,
+    parse_message,
     create_message,
     LOGIN,
     MESSAGE,
@@ -27,10 +32,20 @@ def listen_for_messages():
                 break
 
             # Gelen mesajı UI katmanına gönder
-            ui.add_message(msg)
+            message_type, content = parse_message(msg)
+            if message_type == PING:
+                network_client.send_message(create_message(PONG))
+            elif message_type == PONG:
+                continue
+            elif message_type == USER_LIST:
+                ui.update_users(json.loads(content))
+            else:
+                ui.add_message(msg)
 
         except OSError:
             break
+
+    ui.update_users([])
 
 
 def send(event=None):
