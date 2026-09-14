@@ -1,9 +1,18 @@
+import json
+from threading import RLock, Lock
+from time import monotonic, sleep
 from socket import socket, AF_INET, SOCK_STREAM
 from threading import Thread # birden fazla istemciyi aynı anda dinleyebilmek için
 from protocol import (SEPARATOR, parse_message,
-                      PRIVATE_MESSAGE,)
+                      PRIVATE_MESSAGE, USER_LIST, PING, PONG, create_message)
 
 clients = {}# istemcilerin soketlerini tutmak için bir liste
+clients_lock = RLock()
+send_locks = {}
+last_pong = {}
+user_list_lock = Lock()
+PING_INTERVAL = 10
+PONG_TIMEOUT = 30
 addresses = {} # istemcilerin adreslerini tutmak için bir liste
 
 # client taraıfnda hangi server ile yapılabir tarzı imput oluşturabililir gelişme amaçlı 
@@ -24,142 +33,192 @@ def receive_connections():
     while True:
         client_socket, client_address = SERVER.accept() # istemciyi kabul et standart soket fonksiyonu
         print ("%s:%s has connected." % client_address) # istemcinin bağlandığını yazdır
-        send_to_client(
-            client_socket,
-            "Welcome to the server!\nPlease enter your name:"
-        )
-         
-        addresses[client_socket] = client_address # istemcinin adresini kaydet
+        with clients_lock:
+            addresses[client_socket] = client_address
+            send_locks[client_socket] = Lock()
         Thread(target = handle_client, args=(client_socket,)).start() # istemciyi dinlemeye başla
 
     
 
 def handle_client(client_socket):
-    # Client bağlantısı ile ilgili işlemleri yapar
-
-    # Client'tan kullanıcı adını al
-    raw_message = receive_from_client(client_socket)
-    
-    # message_type, content = parse_message(message)
-
-    if raw_message is None:
-        client_socket.close()
-        return
-
-    # Bağlantı kullanıcı adı alınmadan kapandıysa çık
-    message_type, content = parse_message(raw_message)
-
-    if message_type != "LOGIN":
-        client_socket.close()
-        return
-
-    name = content
-        
-    welcome_message = (
-        "Welcome %s! "
-        "If you ever want to quit, type {quit} to exit."
-        % name
-    )
-
-    # Hoş geldin mesajını client'a gönder
-    send_to_client(
-        client_socket,
-        welcome_message
-    )
-
-    # Client'ın kullanıcı adını kaydet
-    clients[client_socket] = name
-
-    # Diğer kullanıcılara yeni kişinin katıldığını bildir
-    broadcast(
-        "%s has joined the chat." % name
-    )
-
-    while True:
-
-        # Client'tan yeni mesaj bekle
-        message = receive_from_client(client_socket)
-
-        # Bağlantı aniden kesildiyse döngüden çık
-        # Bağlantı aniden kesildiyse
-        if message is None:
-
-            # Client'ı kullanıcı listesinden sil
-            if client_socket in clients:
-                del clients[client_socket]
-
-            # Client'ın adres bilgisini sil
-            if client_socket in addresses:
-                del addresses[client_socket]
-
-            # Socket'i kapat
-            client_socket.close()
-
-            # Diğer kullanıcılara ayrıldığını bildir
-            broadcast("%s has left the chat." % name)
-
-            # Mesaj dinleme döngüsünden çık
-            break
-        # Kullanıcı çıkış komutu göndermediyse
-        # mesajı diğer client'lara yayınla
-
-        message_type, content = parse_message(message)
-        if message_type == "MESSAGE":
-             broadcast(content, name + ": ")
-
-        elif message_type == "PRIVATE_MESSAGE":
-            parts = content.split(SEPARATOR, 1)
-            if len(parts) == 2:
-                target_user = parts[0]
-                private_content = parts[1]
-
-                user_found = False
-
-                # Hedef kullanıcıyı bul
-                for client, user_name in clients.items():
-                    if user_name == target_user:
-                        send_to_client(
-                            client,
-                            f"[özel] {name}: {private_content}"
-                        )
-
-                        if client != client_socket:
-                            send_to_client(
-                                client_socket,
-                                f"[özel -> {target_user}] {private_content}"
-                            )
-                        user_found = True
-                        break
-
-                if not user_found:
-                    send_to_client(
-                        client_socket,
-                        f"User '{target_user}' not found."
-                    )
-
-        elif message_type == "QUIT":
-            send_to_client(client_socket, "{quit}")
-            client_socket.close()
-
-            if client_socket in clients:
-                del clients[client_socket]
-
-            if client_socket in addresses:
-                del addresses[client_socket]
-
-            broadcast("%s has left the chat." % name)
-            break
-
-def broadcast(message, person=""):
-    # Mesajı bütün istemcilere gönder
-    for client_socket in clients:
-
-        full_message = person + message
-
+    try:
         send_to_client(
             client_socket,
-            full_message
+            "Welcome to the server!\nPlease enter your name:"
         )
+        # Client bağlantısı ile ilgili işlemleri yapar
+
+        # Client'tan kullanıcı adını al
+        raw_message = receive_from_client(client_socket)
+    
+        # message_type, content = parse_message(message)
+
+        if raw_message is None:
+            client_socket.close()
+            return
+
+        # Bağlantı kullanıcı adı alınmadan kapandıysa çık
+        message_type, content = parse_message(raw_message)
+
+        if message_type != "LOGIN":
+            client_socket.close()
+            return
+
+        name = content
+        
+        welcome_message = (
+            "Welcome %s! "
+            "If you ever want to quit, type {quit} to exit."
+            % name
+        )
+
+        # Hoş geldin mesajını client'a gönder
+        send_to_client(
+            client_socket,
+            welcome_message
+        )
+
+        # Client'ın kullanıcı adını kaydet
+        with clients_lock:
+            clients[client_socket] = name
+            last_pong[client_socket] = monotonic()
+        broadcast_user_list()
+
+        # Diğer kullanıcılara yeni kişinin katıldığını bildir
+        broadcast(
+            "%s has joined the chat." % name
+        )
+
+        while True:
+
+            # Client'tan yeni mesaj bekle
+            message = receive_from_client(client_socket)
+
+            # Bağlantı aniden kesildiyse döngüden çık
+            # Bağlantı aniden kesildiyse
+            if message is None:
+                break
+
+            with clients_lock:
+                if client_socket not in last_pong:
+                    break
+
+            message_type, content = parse_message(message)
+            if message_type == PONG:
+                with clients_lock:
+                    if client_socket in last_pong:
+                        last_pong[client_socket] = monotonic()
+            elif message_type == "MESSAGE":
+                 broadcast(content, name + ": ")
+
+            elif message_type == "PRIVATE_MESSAGE":
+                parts = content.split(SEPARATOR, 1)
+                if len(parts) == 2:
+                    target_user = parts[0]
+                    private_content = parts[1]
+
+                    user_found = False
+
+                    # Hedef kullanıcıyı bul
+                    with clients_lock:
+                        online_clients = list(clients.items())
+                    for client, user_name in online_clients:
+                        if user_name == target_user:
+                            try:
+                                send_to_client(
+                                    client,
+                                    f"[özel] {name}: {private_content}"
+                                )
+                            except OSError:
+                                stop_client(client)
+                                break
+
+                            if client != client_socket:
+                                send_to_client(
+                                    client_socket,
+                                    f"[özel -> {target_user}] {private_content}"
+                                )
+                            user_found = True
+                            break
+
+                    if not user_found:
+                        send_to_client(
+                            client_socket,
+                            f"User '{target_user}' not found."
+                        )
+
+            elif message_type == "QUIT":
+                send_to_client(client_socket, "{quit}")
+                break
+    except (OSError, ValueError):
+        # EOF, reset and invalid frames all use the same cleanup.
+        pass
+    finally:
+        remove_client(client_socket)
+
+
+def stop_client(client_socket):
+    # Do not wait for a send lock: shutdown must interrupt blocked socket I/O.
+    with clients_lock:
+        last_pong.pop(client_socket, None)
+        try:
+            client_socket.shutdown(2)
+        except OSError:
+            pass
+        client_socket.close()
+
+
+def remove_client(client_socket):
+    with clients_lock:
+        was_online = client_socket in clients
+        name = clients.pop(client_socket, None)
+        addresses.pop(client_socket, None)
+        stop_client(client_socket)
+        send_locks.pop(client_socket, None)
+    if was_online:
+        broadcast("%s has left the chat." % name)
+        broadcast_user_list()
+
+
+def send_heartbeats():
+    while True:
+        sleep(PING_INTERVAL)
+        with clients_lock:
+            online_clients = list(last_pong)
+        for client_socket in online_clients:
+            try:
+                send_to_client(client_socket, create_message(PING))
+            except OSError:
+                stop_client(client_socket)
+
+
+def check_heartbeat_timeouts():
+    while True:
+        sleep(1)
+        with clients_lock:
+            for client_socket, pong_time in list(last_pong.items()):
+                if monotonic() - pong_time >= PONG_TIMEOUT:
+                    # The handler performs cleanup and broadcasts outside this thread.
+                    stop_client(client_socket)
+
+
+def broadcast(message, person=""):
+    with clients_lock:
+        online_clients = list(clients)
+    for client_socket in online_clients:
+        try:
+            send_to_client(client_socket, person + message)
+        except OSError:
+            stop_client(client_socket)
+
+
+def broadcast_user_list():
+    # Serialize snapshots so an older list cannot overwrite a newer one.
+    with user_list_lock:
+        with clients_lock:
+            users = list(clients.values())
+        broadcast(create_message(USER_LIST, json.dumps(users, ensure_ascii=False)))
+
 
 def receive_exactly(client_socket, byte_count):
     """
@@ -241,15 +300,22 @@ def send_to_client(client_socket, message):
     header_bytes = header.encode("utf-8")
 
     # Header ve mesajı birlikte gönder
-    client_socket.sendall(
-        header_bytes + message_bytes
-    )
+    with clients_lock:
+        send_lock = send_locks.get(client_socket)
+    if send_lock is None:
+        raise OSError("Client is disconnected")
+    with send_lock:
+        client_socket.sendall(
+            header_bytes + message_bytes
+        )
 
 
 
 
 if __name__ == "__main__": # bu dosya çalıştırıldığında çalışacak kodlar
     SERVER.listen() # soketi dinlemeye başla
+    Thread(target=send_heartbeats, daemon=True).start()
+    Thread(target=check_heartbeat_timeouts, daemon=True).start()
     print("Waiting for connection...") # bağlantı bekleniyor mesajı yazdır
     ACCEPT_THREAD = Thread(target=receive_connections) # gelen bağlantıları dinlemeye başla
     ACCEPT_THREAD.start() # thread'i başlat

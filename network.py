@@ -1,4 +1,5 @@
 from socket import AF_INET, socket, SOCK_STREAM
+from threading import Lock
 
  # soket ile ilgili işlemleri yapacak sınıf
 class NetworkClient:
@@ -7,6 +8,7 @@ class NetworkClient:
         self.client_socket = None
         self.buffer_size = 10
         self.header_size = 10
+        self.send_lock = Lock()
 
     def connect(self, host, port):
         self.client_socket = socket(AF_INET, SOCK_STREAM) # soket oluşturma
@@ -26,7 +28,11 @@ class NetworkClient:
         header_bytes = header.encode("utf-8")
 
         #önce headerı gönder, sonra mesajı gönder
-        self.client_socket.sendall(header_bytes + message_bytes)
+        with self.send_lock:
+            client_socket = self.client_socket
+            if client_socket is None:
+                raise OSError("Client is disconnected")
+            client_socket.sendall(header_bytes + message_bytes)
         #sendall ile tüm mesajı gönderiyoruz, çünkü send() ile gönderilen mesajın tamamı gitmeyebilir
 
     def receive_message(self):
@@ -80,7 +86,10 @@ class NetworkClient:
             remaining = byte_count - len(data)
 
             # Sadece eksik kalan kadar veri istemeye çalış
-            chunk = self.client_socket.recv(remaining)
+            client_socket = self.client_socket
+            if client_socket is None:
+                return None
+            chunk = client_socket.recv(remaining)
 
             # recv boş veri döndürürse bağlantı kapanmıştır
             if not chunk:
