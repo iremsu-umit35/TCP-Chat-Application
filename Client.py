@@ -1,3 +1,4 @@
+import logging
 import json
 from threading import Thread
 from time import sleep # reconnect için sleep fonksiyonu
@@ -29,6 +30,14 @@ saved_port = None
 # TCP işlemlerini yapacak nesne
 network_client = NetworkClient()
 
+# Logging yapılandırması
+logging.basicConfig(
+    filename="client.log",
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 def listen_for_messages():
     """
@@ -41,6 +50,7 @@ def listen_for_messages():
 
             if not msg:
                 connection_state = DISCONNECTED
+                logger.warning("Connection to server was closed.")
                 break
 
             message_type, content = parse_message(msg)
@@ -61,8 +71,12 @@ def listen_for_messages():
             else:
                 ui.add_message(msg)
 
-        except OSError:
+        except OSError as error:
             connection_state = DISCONNECTED
+            logger.warning(
+                "Connection lost due to socket error: %s",
+                error
+            )
             break
 
     ui.update_users([])
@@ -148,15 +162,14 @@ def on_closing(event=None):
 
         ui.close()
 
-
-
-
+# Bağlantıyı kurma fonksiyonu
 def connect_to_server():
 
     """
     UI'dan server bilgilerini alır
     ve TCP bağlantısını oluşturur.
     """
+
     global connection_state
     global saved_username, saved_host, saved_port
 
@@ -168,6 +181,7 @@ def connect_to_server():
     saved_username = username
     saved_host = host
     saved_port = port
+
     try:
         # Server'a TCP bağlantısı kur
         network_client.connect(
@@ -176,6 +190,13 @@ def connect_to_server():
         )
 
         connection_state = CONNECTED
+
+        logger.info(
+            "Connected to server %s:%s as %s",
+            host,
+            port,
+            username
+        )
 
         # Kullanıcı adını server'a gönder
         network_client.send_message(
@@ -193,10 +214,15 @@ def connect_to_server():
 
         coming_message_thread.start()
 
-    except OSError:
+    except OSError as error:
         connection_state = DISCONNECTED
-        print("Server'a bağlanılamadı.")
 
+        logger.error(
+            "Could not connect to server %s:%s: %s",
+            host,
+            port,
+            error
+        )
 # UI nesnesini oluştur
 ui = ChatUI(
     connect_callback=connect_to_server,
@@ -217,9 +243,10 @@ def reconnect_to_server():
 
     for attempt in range(1, max_attempts + 1):
         try:
-            print(
-                f"Yeniden bağlanılıyor... "
-                f"Deneme {attempt}/{max_attempts}"
+            logger.info(
+                "Reconnect attempt %s/%s",
+                attempt,
+                max_attempts
             )
 
             network_client.connect(
@@ -233,18 +260,31 @@ def reconnect_to_server():
 
             connection_state = CONNECTED
 
-            print("Server'a yeniden bağlanıldı.")
+            logger.info(
+                "Reconnected to server %s:%s as %s",
+                saved_host,
+                saved_port,
+                saved_username
+            )
             return True
 
-        except OSError:
-            print("Bağlantı denemesi başarısız.")
+        except OSError as error:
+            logger.warning(
+                "Reconnect attempt %s/%s failed: %s",
+                attempt,
+                max_attempts,
+                error
+            )
 
             if attempt < max_attempts:
                 sleep(retry_delay)
 
     connection_state = DISCONNECTED
-    print("Server'a yeniden bağlanılamadı.")
-
+    # Bağlantı yeniden kurulamazsa hata mesajı loglanır
+    logger.error(
+        "Could not reconnect to server after %s attempts.",
+        max_attempts
+    )
     return False
 
 # GUI'yi çalıştır

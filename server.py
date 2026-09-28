@@ -5,6 +5,7 @@ from socket import socket, AF_INET, SOCK_STREAM
 from threading import Thread # birden fazla istemciyi aynı anda dinleyebilmek için
 from protocol import (SEPARATOR, parse_message,
                       PRIVATE_MESSAGE, USER_LIST, PING, PONG, create_message)
+import logging
 
 clients = {}# istemcilerin soketlerini tutmak için bir liste
 clients_lock = RLock()
@@ -21,8 +22,14 @@ addresses = {} # istemcilerin adreslerini tutmak için bir liste
 HEADER_SIZE = 10
 HOST = '127.0.0.1' #localhost, ıp adresi
 PORT = 19751 # port numarası 0–65535 arası olabilir
+# logging ayarları
+logging.basicConfig(
+    filename="server.log",
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
 
-
+logger = logging.getLogger(__name__)
 
 ADDR = (HOST, PORT) # adres tuple'ı
 SERVER = socket(AF_INET, SOCK_STREAM) # soket oluşturma
@@ -32,7 +39,11 @@ def receive_connections():
 # gelen mesajların kontrolünü yapar ve mesajları istemcilere iletir
     while True:
         client_socket, client_address = SERVER.accept() # istemciyi kabul et standart soket fonksiyonu
-        print ("%s:%s has connected." % client_address) # istemcinin bağlandığını yazdır
+        logger.info(
+            "Client connected from %s:%s",
+            client_address[0],
+            client_address[1]
+            ) # istemcinin bağlandığını yazdır
         with clients_lock:
             addresses[client_socket] = client_address
             send_locks[client_socket] = Lock()
@@ -65,7 +76,7 @@ def handle_client(client_socket):
             return
 
         name = content
-        
+        logger.info("User logged in: %s", name) # kullanıcı adını log dosyasına yazdır
         welcome_message = (
             "Welcome %s! "
             "If you ever want to quit, type {quit} to exit."
@@ -150,9 +161,11 @@ def handle_client(client_socket):
             elif message_type == "QUIT":
                 send_to_client(client_socket, "{quit}")
                 break
-    except (OSError, ValueError):
-        # EOF, reset and invalid frames all use the same cleanup.
-        pass
+    except (OSError, ValueError) as error:
+        logger.error(
+            "Client handling error: %s",
+            error
+        )
     finally:
         remove_client(client_socket)
 
@@ -176,6 +189,7 @@ def remove_client(client_socket):
         stop_client(client_socket)
         send_locks.pop(client_socket, None)
     if was_online:
+        logger.info("User disconnected: %s", name) # kullanıcı çıkışını log dosyasına yazdır
         broadcast("%s has left the chat." % name)
         broadcast_user_list()
 
@@ -193,14 +207,22 @@ def send_heartbeats():
 
 
 def check_heartbeat_timeouts():
+    # Bu fonksiyon, istemcilerin son PONG yanıtlarını kontrol eder ve zaman aşımına uğrayan istemcileri durdurur.
     while True:
         sleep(1)
+
         with clients_lock:
             for client_socket, pong_time in list(last_pong.items()):
                 if monotonic() - pong_time >= PONG_TIMEOUT:
-                    # The handler performs cleanup and broadcasts outside this thread.
-                    stop_client(client_socket)
 
+                    name = clients.get(client_socket, "Unknown")
+
+                    logger.warning(
+                        "Heartbeat timeout: %s",
+                        name
+                    )
+
+                    stop_client(client_socket)
 
 def broadcast(message, person=""):
     with clients_lock:
@@ -316,7 +338,10 @@ if __name__ == "__main__": # bu dosya çalıştırıldığında çalışacak kod
     SERVER.listen() # soketi dinlemeye başla
     Thread(target=send_heartbeats, daemon=True).start()
     Thread(target=check_heartbeat_timeouts, daemon=True).start()
-    print("Waiting for connection...") # bağlantı bekleniyor mesajı yazdır
+    logger.info(
+        "Server started on %s:%s",
+        HOST,
+        PORT)
     ACCEPT_THREAD = Thread(target=receive_connections) # gelen bağlantıları dinlemeye başla
     ACCEPT_THREAD.start() # thread'i başlat
     ACCEPT_THREAD.join() # thread'in bitmesini bekle
